@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>代理控制台</title>
+<style>
+:root{--bg:#1a1a1a;--fg:#e0e0e0;--accent:#ff5722;--panel:#252525}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:'Courier New',monospace;margin:0;padding:10px;font-size:13px}
+header{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:2px solid var(--accent);margin-bottom:10px;flex-wrap:wrap;gap:10px}
+h1{margin:0;font-size:16px;color:var(--accent)}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+button{background:#333;color:#fff;border:1px solid #555;padding:10px 14px;cursor:pointer;font-family:inherit;font-size:12px}
+button:hover{background:#444}
+button.danger{border-color:var(--accent);color:var(--accent)}
+button.primary{background:var(--accent);color:#000;border-color:var(--accent)}
+select{background:#333;color:#fff;border:1px solid #555;padding:8px;font-family:inherit}
+.table-wrap{overflow-x:auto;background:var(--panel);border:1px solid #333}
+table{width:100%;border-collapse:collapse;min-width:800px}
+th,td{text-align:left;padding:10px 8px;border-bottom:1px solid #333;vertical-align:top}
+th{background:#1a1a1a;color:#888;font-size:11px;position:sticky;top:0}
+.name-cell{max-width:200px}
+.name-main{color:#fff;font-weight:bold}
+.name-id{font-size:10px;color:#666;word-break:break-all}
+.ip-cell{color:var(--accent);font-weight:bold;font-size:14px}
+.ip-changing{color:#ffeb3b;animation:blink 1s infinite}
+@keyframes blink{50%{opacity:0.5}}
+.tier-std{color:#4caf50}
+.tier-prm{color:#ff9800}
+.status-online{color:#4caf50}
+.status-changing{color:#ffeb3b}
+.action-btn{background:var(--accent);color:#000;border:none;padding:6px 10px;font-size:11px}
+.modal-bg{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:100}
+.modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#222;border:2px solid var(--accent);z-index:101;width:90%;max-width:350px;display:none}
+.modal-header{background:var(--accent);color:#000;padding:10px;font-weight:bold}
+.modal-body{padding:0}
+.modal-body button{display:block;width:100%;text-align:left;border:none;border-bottom:1px solid #333;background:#222;padding:14px;color:#fff}
+.modal-body button:hover{background:#333}
+.modal-body button.std{color:#4caf50}
+.modal-body button.prm{color:#ff9800}
+.modal-body button.tgl{color:#2196f3}
+.modal-body input{width:100%;padding:12px;background:#333;border:none;color:#fff;font-size:14px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 20px;border-radius:4px;display:none;z-index:200}
+a{color:#888;text-decoration:none}
+.nav-links{display:flex;gap:15px;align-items:center}
+input[type="checkbox"]{width:16px;height:16px;cursor:pointer}
+</style>
+</head>
+<body>
+<textarea id="copyHelper" style="position:absolute;left:-9999px;"></textarea>
+<div class="toast" id="toast"></div>
+<header>
+<h1>代理控制台</h1>
+<div class="nav-links">
+<select id="tzSelect" onchange="setTimezone(this.value)">
+<option value="8" {{ 'selected' if config.timezone == 8 else '' }}>UTC+8 北京</option>
+<option value="0" {{ 'selected' if config.timezone == 0 else '' }}>UTC+0</option>
+<option value="-5" {{ 'selected' if config.timezone == -5 else '' }}>UTC-5 美东</option>
+<option value="-8" {{ 'selected' if config.timezone == -8 else '' }}>UTC-8 美西</option>
+</select>
+<a href="/api/docs" target="_blank">[API]</a>
+<a href="/secret_panel/logs">[日志]</a>
+<a href="/logout">[退出]</a>
+</div>
+</header>
+<div class="toolbar">
+<button class="primary" onclick="location.reload()">🔄 刷新</button>
+<button class="danger" onclick="openBatchModal()">⚠️ 批量换IP</button>
+<button onclick="copyBatch('http')">复制HTTP</button>
+<button onclick="copyBatch('socks')">复制SOCKS</button>
+</div>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th width="30"><input type="checkbox" id="selectAll"></th>
+<th>名称 / ID</th>
+<th>区域</th>
+<th>IP</th>
+<th>层级</th>
+<th>状态</th>
+<th>认证</th>
+<th>活跃</th>
+<th>操作</th>
+</tr>
+</thead>
+<tbody>
+{% for id, p in proxies.items() %}
+{% set alias = aliases.get(id, '') %}
+{% set tier = p.tier if p.tier else 'UNKNOWN' %}
+{% set status = p.status if p.status else 'online' %}
+<tr data-id="{{ id }}" data-json='{{ p | tojson | e }}'>
+<td><input type="checkbox" class="row-cb"></td>
+<td class="name-cell">
+<div class="name-main">{{ alias if alias else id[:12] + '...' }}</div>
+<div class="name-id">{{ id }}</div>
+</td>
+<td>{{ p.region or '-' }}</td>
+<td class="{{ 'ip-changing' if status == 'changing' else 'ip-cell' }}">{{ '更换中...' if status == 'changing' else p.ip }}</td>
+<td class="{{ 'tier-std' if tier == 'STANDARD' else 'tier-prm' if tier == 'PREMIUM' else '' }}">{{ tier }}</td>
+<td class="{{ 'status-changing' if status == 'changing' else 'status-online' }}">{{ '更换中' if status == 'changing' else '在线' }}</td>
+<td>{{ p.user }} / {{ p.pass }}</td>
+<td>{{ p.last_seen.split(' ')[1] if p.last_seen else '-' }}</td>
+<td><button class="action-btn" onclick='openModal("{{ id }}", {{ p | tojson | e }}, "{{ alias }}")' {{ 'disabled' if status == 'changing' else '' }}>管理</button></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+
+<div class="modal-bg" id="modalBg" onclick="closeModal()"></div>
+<div class="modal" id="modal">
+<div class="modal-header" id="modalTitle">操作</div>
+<div class="modal-body" id="modalBody"></div>
+</div>
+
+<div class="modal-bg" id="batchBg" onclick="closeBatchModal()"></div>
+<div class="modal" id="batchModal">
+<div class="modal-header">批量换IP</div>
+<div class="modal-body">
+<button class="std" onclick="batchRefresh('standard')">🟢 标准层</button>
+<button class="prm" onclick="batchRefresh('premium')">🟠 高级层</button>
+<button class="tgl" onclick="batchRefresh('toggle')">🔄 互换</button>
+<button onclick="closeBatchModal()" style="text-align:center;color:#666;">取消</button>
+</div>
+</div>
+
+<script>
+let currentId=null,currentProxy=null,currentAlias='';
+function showToast(msg){const t=document.getElementById('toast');t.innerText=msg;t.style.display='block';setTimeout(()=>t.style.display='none',2000)}
+function copyText(text){document.getElementById('copyHelper').value=text;document.getElementById('copyHelper').select();document.execCommand('copy');showToast('已复制')}
+function setTimezone(tz){fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({timezone:parseInt(tz)})}).then(()=>showToast('时区已设置'))}
+
+document.getElementById('selectAll').addEventListener('click',function(){
+const boxes=document.querySelectorAll('.row-cb');
+const allChecked=Array.from(boxes).every(cb=>cb.checked);
+const noneChecked=Array.from(boxes).every(cb=>!cb.checked);
+if(noneChecked){boxes.forEach(cb=>cb.checked=true);this.checked=true}
+else if(allChecked){boxes.forEach(cb=>cb.checked=false);this.checked=false}
+else{boxes.forEach(cb=>cb.checked=!cb.checked)}
+});
+
+document.querySelectorAll('.row-cb').forEach(cb=>{cb.addEventListener('change',()=>{
+const boxes=document.querySelectorAll('.row-cb');
+const all=Array.from(boxes).every(c=>c.checked);
+const some=Array.from(boxes).some(c=>c.checked);
+document.getElementById('selectAll').checked=all;
+document.getElementById('selectAll').indeterminate=some&&!all;
+})});
+
+function openModal(id,data,alias){currentId=id;currentProxy=data;currentAlias=alias||'';
+document.getElementById('modalTitle').innerText='管理: '+(alias||data.ip);
+document.getElementById('modalBody').innerHTML=`
+<button onclick="doCopy('http_url')">复制 HTTP 链接</button>
+<button onclick="doCopy('socks_url')">复制 SOCKS5 链接</button>
+<button onclick="doCopy('http_raw')">复制 HTTP (IP:端口:用户:密码)</button>
+<button onclick="doCopy('socks_raw')">复制 SOCKS (IP:端口:用户:密码)</button>
+<button class="std" onclick="doRefresh('standard')">⚡ 换IP (标准层)</button>
+<button class="prm" onclick="doRefresh('premium')">⚡ 换IP (高级层)</button>
+<div style="padding:10px;border-bottom:1px solid #333;"><input type="text" id="renameInput" placeholder="输入别名" value="${currentAlias}"></div>
+<button onclick="doRename()">💾 保存别名</button>
+<button onclick="closeModal()" style="text-align:center;color:#666;">取消</button>`;
+document.getElementById('modalBg').style.display='block';document.getElementById('modal').style.display='block'}
+function closeModal(){document.getElementById('modalBg').style.display='none';document.getElementById('modal').style.display='none'}
+function doCopy(t){if(!currentProxy)return;const p=currentProxy;let s='';
+if(t==='http_url')s=`http://${p.user}:${p.pass}@${p.ip}:${p.http_port}`;
+if(t==='socks_url')s=`socks5://${p.user}:${p.pass}@${p.ip}:${p.socks_port}`;
+if(t==='http_raw')s=`${p.ip}:${p.http_port}:${p.user}:${p.pass}`;
+if(t==='socks_raw')s=`${p.ip}:${p.socks_port}:${p.user}:${p.pass}`;
+copyText(s);closeModal()}
+function doRefresh(tier){if(!currentId||!confirm('确定换IP?'))return;
+fetch('/api/refresh',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:currentId,tier})}).then(()=>showToast('指令已发送'));closeModal()}
+function doRename(){const n=document.getElementById('renameInput').value.trim();
+fetch('/api/rename',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:currentId,name:n})}).then(()=>{showToast('已保存');setTimeout(()=>location.reload(),500)});closeModal()}
+function openBatchModal(){if(!document.querySelectorAll('.row-cb:checked').length){alert('请先勾选');return}document.getElementById('batchBg').style.display='block';document.getElementById('batchModal').style.display='block'}
+function closeBatchModal(){document.getElementById('batchBg').style.display='none';document.getElementById('batchModal').style.display='none'}
+function batchRefresh(tier){const ids=[];document.querySelectorAll('tr[data-id]').forEach(tr=>{if(tr.querySelector('.row-cb').checked)ids.push(tr.dataset.id)});
+if(!ids.length||!confirm(`对${ids.length}个节点换IP?`))return;
+ids.forEach(id=>fetch('/api/refresh',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,tier})}));
+showToast(`已发送${ids.length}个指令`);closeBatchModal()}
+function copyBatch(t){let l=[];document.querySelectorAll('tr[data-json]').forEach(tr=>{if(tr.querySelector('.row-cb').checked){const p=JSON.parse(tr.dataset.json);
+if(t==='http')l.push(`http://${p.user}:${p.pass}@${p.ip}:${p.http_port}`);
+if(t==='socks')l.push(`socks5://${p.user}:${p.pass}@${p.ip}:${p.socks_port}`)}});
+if(!l.length){alert('请先勾选');return}copyText(l.join('\n'))}
+</script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>事件日志</title>
+<style>
+body{background:#111;color:#0f0;font-family:'Courier New',monospace;margin:0;padding:10px;font-size:12px}
+h1{color:#ff5722;font-size:16px;margin-bottom:10px}
+a{color:#888}
+.toolbar{margin-bottom:10px}
+button{background:#333;color:#fff;border:1px solid #555;padding:8px 12px;cursor:pointer;font-size:12px}
+.log-box{background:#000;border:1px solid #333;padding:10px;height:80vh;overflow-y:auto}
+.log-line{margin-bottom:4px;border-bottom:1px solid #222;padding-bottom:4px}
+</style>
+</head>
+<body>
+<h1>事件日志 <a href="/secret_panel">[返回面板]</a></h1>
+<div class="toolbar">
+<button onclick="location.reload()">🔄 刷新</button>
+</div>
+<div class="log-box">
+{% for line in logs %}
+<div class="log-line">{{ line }}</div>
+{% endfor %}
+{% if not logs %}
+<div>暂无日志</div>
+{% endif %}
+</div>
+</body>
+</html>
