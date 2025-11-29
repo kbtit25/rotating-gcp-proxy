@@ -60,7 +60,7 @@ input[type="checkbox"]{width:16px;height:16px;cursor:pointer}
 <option value="-8" {{ 'selected' if config.timezone == -8 else '' }}>UTC-8 美西</option>
 </select>
 <a href="/api/docs" target="_blank">[API]</a>
-<a href="/secret_panel/logs">[日志]</a>
+<a href="{{ admin_path }}/logs">[日志]</a>
 <a href="/logout">[退出]</a>
 </div>
 </header>

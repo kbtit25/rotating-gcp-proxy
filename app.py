@@ -11,6 +11,7 @@ app.config['JSON_AS_ASCII'] = False
 
 # 从环境变量读取配置
 API_TOKEN = os.environ.get('API_TOKEN', 'changeme')
+PANEL_PASSWORD = os.environ.get('PANEL_PASSWORD', API_TOKEN)
 ADMIN_PATH = os.environ.get('ADMIN_PATH', '/secret_panel')
 DATA_DIR = os.environ.get('DATA_DIR', '.')
 
@@ -83,7 +84,7 @@ def check_auth(f):
             return f(*args, **kwargs)
         if session.get('logged_in'):
             return f(*args, **kwargs)
-        if request.cookies.get('auth_token') == API_TOKEN:
+        if request.cookies.get('auth_token') == PANEL_PASSWORD:
             return f(*args, **kwargs)
         if request.path.startswith('/api/'):
             return jsonify({"error": "Forbidden"}), 403
@@ -99,10 +100,10 @@ def index():
 def login():
     if request.method == 'POST':
         pwd = request.form.get('token')
-        if pwd == API_TOKEN:
+        if pwd == PANEL_PASSWORD:
             session['logged_in'] = True
             resp = make_response(redirect(ADMIN_PATH))
-            resp.set_cookie('auth_token', API_TOKEN, max_age=86400*30)
+            resp.set_cookie('auth_token', PANEL_PASSWORD, max_age=86400*30)
             return resp
         else:
             return render_template('login.html', error="无效的密钥")
@@ -111,12 +112,12 @@ def login():
 @app.route(ADMIN_PATH)
 @check_auth
 def admin_ui():
-    return render_template('index.html', proxies=proxies, aliases=aliases, config=config)
+    return render_template('index.html', proxies=proxies, aliases=aliases, config=config, admin_path=ADMIN_PATH)
 
 @app.route(ADMIN_PATH + '/logs')
 @check_auth
 def logs_page():
-    return render_template('logs.html', logs=get_events())
+    return render_template('logs.html', logs=get_events(), admin_path=ADMIN_PATH)
 
 @app.route('/logout')
 def logout():
